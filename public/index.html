@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thư viện Sách Gia đình</title>
+<style>
+:root{--bg:#f7efe3;--card:#fffaf2;--ink:#3d2c1e;--muted:#8a7360;--brand:#c97b4a;--brand2:#8a9a5b;--line:#e8dcc8}
+*{box-sizing:border-box}body{margin:0;font-family:Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink)}
+header{background:#fffaf2;border-bottom:2px solid var(--line);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+h1{margin:0;font-size:24px}h1 span{font-size:15px;color:var(--muted);display:block;font-weight:400}
+button{font-family:inherit;cursor:pointer;border:0;border-radius:10px;padding:9px 14px;background:var(--brand);color:#fff;font-size:15px}
+button.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+button.green{background:var(--brand2)}button.small{padding:5px 9px;font-size:13px}
+input,select,textarea{font-family:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;width:100%}
+main{max-width:1000px;margin:0 auto;padding:18px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.tabs button.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.book{display:flex;gap:12px}.cover{width:64px;height:92px;object-fit:cover;border-radius:8px;background:#e8dcc8;flex:none}
+.cover-ph{width:64px;height:92px;border-radius:8px;background:#e8dcc8;display:flex;align-items:center;justify-content:center;font-size:28px;flex:none}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;background:#efe3cf}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1;min-width:140px}
+.star{font-size:22px;cursor:pointer;color:#d8c9a8}.star.on{color:#e8a317}
+.hidden{display:none}.muted{color:var(--muted);font-size:14px}
+.auth{max-width:420px;margin:60px auto}.auth h2{margin-top:0}
+progress{width:100%;accent-color:var(--brand2)}
+@media(max-width:600px){h1{font-size:20px}}
+</style></head>
+<body>
+<header><h1>📚 Thư viện Sách Gia đình<span>Kệ sách chung — đăng nhập để tự lưu trên máy chủ</span></h1>
+<div id="userBar" class="hidden"><span id="hello"></span> <button class="ghost small" onclick="changePass()">Đổi mật khẩu</button> <button class="ghost small" onclick="logout()">Đăng xuất</button></div></header>
+<main>
+<!-- AUTH -->
+<div id="authBox" class="card auth">
+  <h2 id="authTitle">Đăng nhập</h2>
+  <p class="muted">Mỗi người đăng ký một tài khoản riêng. Sách tự lưu trên máy chủ, mở máy nào có mạng cũng thấy.</p>
+  <label>Tên đăng nhập<input id="username" autocomplete="username"></label><br><br>
+  <label id="nameWrap" class="hidden">Tên hiển thị<input id="displayName" placeholder="Ví dụ: Mẹ Lan"></label><br>
+  <label>Mật khẩu<input id="password" type="password" autocomplete="current-password"></label><br><br>
+  <button style="width:100%" onclick="submitAuth()" id="authBtn">Đăng nhập</button>
+  <p><a href="#" onclick="toggleAuth(event)" id="authSwitch">Chưa có tài khoản? Đăng ký</a></p>
+  <p id="authErr" style="color:#b3261e"></p>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <div class="tabs">
+    <button class="active" data-tab="shelf" onclick="showTab('shelf',this)">📖 Kệ sách</button>
+    <button data-tab="reading" onclick="showTab('reading',this)">📖 Đang đọc</button>
+    <button data-tab="wish" onclick="showTab('wish',this)">💝 Mong muốn</button>
+    <button data-tab="family" onclick="showTab('family',this)">👨‍👩‍👧 Gia đình</button>
+    <button data-tab="io" onclick="showTab('io',this)">⬇️ Xuất / Nhập</button>
+  </div>
+
+  <section id="tab-shelf">
+    <div class="card"><div class="row">
+      <input id="q" placeholder="Tìm tên sách, tác giả, thể loại…" oninput="render()">
+      <select id="fStatus" onchange="render()"><option value="">Tất cả trạng thái</option><option value="ready">Sẵn sàng</option><option value="reading">Đang đọc</option><option value="lent">Đã cho mượn</option><option value="lost">Thất lạc</option></select>
+      <select id="fRead" onchange="render()"><option value="">Tất cả</option><option value="unread">Chưa đọc</option><option value="reading">Đang đọc</option><option value="done">Đã đọc xong</option></select>
+    </div></div>
+    <div class="card"><h3 style="margin-top:0">➕ Thêm sách</h3>
+      <div class="row"><input id="isbn" placeholder="Nhập ISBN rồi bấm Tra cứu"><button class="green" onclick="lookupIsbn()">Tra ISBN</button></div>
+      <p id="isbnMsg" class="muted"></p>
+      <div class="row"><input id="bTitle" placeholder="Tiêu đề *"><input id="bAuthor" placeholder="Tác giả"></div><br>
+      <div class="row"><input id="bGenre" placeholder="Thể loại"><input id="bYear" type="number" placeholder="Năm xuất bản"><input id="bPages" type="number" placeholder="Số trang"></div><br>
+      <div class="row"><input id="bCover" placeholder="Link ảnh bìa (tùy chọn)"><input id="bLoc" placeholder="Vị trí: Tủ phòng khách…"></div><br>
+      <button onclick="addBook()">Thêm vào kệ</button> <span id="addMsg" class="muted"></span>
+    </div>
+    <div id="bookList" class="grid"></div>
+  </section>
+
+  <section id="tab-reading" class="hidden"><div class="card"><h3 style="margin-top:0">Đang đọc</h3><div id="readingList"></div></div></section>
+
+  <section id="tab-wish" class="hidden"><div class="card"><h3 style="margin-top:0">💝 Sách muốn mua</h3>
+    <div class="row"><input id="wTitle" placeholder="Tên sách *"><input id="wAuthor" placeholder="Tác giả"><input id="wNote" placeholder="Ghi chú"></div><br>
+    <button onclick="addWish()">Thêm vào Mong muốn</button><div id="wishList" style="margin-top:12px"></div></div></section>
+
+  <section id="tab-family" class="hidden"><div class="card"><h3 style="margin-top:0">👨‍👩‍👧 Thành viên gia đình</h3>
+    <div class="row"><input id="mName" placeholder="Tên thành viên *"><input id="mAvatar" placeholder="Emoji avatar, vd: 👩" maxlength="4"><input id="mColor" type="color" value="#c97b4a"></div><br>
+    <button onclick="addMember()">Thêm thành viên</button><div id="memberList" style="margin-top:12px"></div></div></section>
+
+  <section id="tab-io" class="hidden"><div class="card"><h3 style="margin-top:0">⬇️ Xuất / Nhập dữ liệu</h3>
+    <p class="muted">Dữ liệu đã tự lưu trên máy chủ theo tài khoản. Xuất/Nhập chỉ để sao lưu hoặc chuyển sang tài khoản khác.</p>
+    <button onclick="exportJson()">Xuất file JSON</button>
+    <p></p><label>Nhập file JSON <input type="file" id="importFile" accept=".json"></label>
+    <div class="row"><select id="importMode"><option value="merge">Gộp vào kệ hiện tại</option><option value="replace">Thay thế toàn bộ</option></select><button class="green" onclick="importJson()">Nhập</button></div>
+    <p id="ioMsg" class="muted"></p></div></section>
+</div>
+</main>
+<script>
+let token=localStorage.getItem('lib_token')||'', me=null, books=[], members=[], wishlist=[], isRegister=false;
+const STATUS={ready:'Sẵn sàng',reading:'Đang được đọc',lent:'Đã cho mượn',lost:'Bị thất lạc'};
+async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(opt.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Lỗi '+r.status);return j;}
+function toggleAuth(e){e.preventDefault();isRegister=!isRegister;document.getElementById('authTitle').textContent=isRegister?'Đăng ký':'Đăng nhập';document.getElementById('authBtn').textContent=isRegister?'Đăng ký':'Đăng nhập';document.getElementById('authSwitch').textContent=isRegister?'Đã có tài khoản? Đăng nhập':'Chưa có tài khoản? Đăng ký';document.getElementById('nameWrap').classList.toggle('hidden',!isRegister);}
+async function submitAuth(){const u=document.getElementById('username').value.trim(),p=document.getElementById('password').value,d=document.getElementById('displayName').value.trim();try{const r=await api(isRegister?'/api/auth/register':'/api/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p,displayName:d})});token=r.token;localStorage.setItem('lib_token',token);me=r.user;enterApp();}catch(e){document.getElementById('authErr').textContent=e.message;}}
+function logout(){token='';localStorage.removeItem('lib_token');location.reload();}
+async function changePass(){const o=prompt('Mật khẩu cũ:'),n=prompt('Mật khẩu mới (ít nhất 4 ký tự):');if(!o||!n)return;try{await api('/api/auth/change-password',{method:'POST',body:JSON.stringify({oldPassword:o,newPassword:n})});alert('Đã đổi mật khẩu.');}catch(e){alert(e.message);}}
+async function enterApp(){document.getElementById('authBox').classList.add('hidden');document.getElementById('app').classList.remove('hidden');document.getElementById('userBar').classList.remove('hidden');document.getElementById('hello').textContent='Xin chào, '+(me.displayName||me.username)+' 👋';await loadAll();}
+async function loadAll(){books=await api('/api/books');members=await api('/api/members');wishlist=await api('/api/wishlist');render();}
+function showTab(id,btn){document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['shelf','reading','wish','family','io'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==id));}
+async function lookupIsbn(){const isbn=document.getElementById('isbn').value.trim();if(!isbn)return;document.getElementById('isbnMsg').textContent='Đang tra cứu…';try{const j=await api('/api/isbn/'+encodeURIComponent(isbn));document.getElementById('bTitle').value=j.title||'';document.getElementById('bAuthor').value=j.author||'';document.getElementById('bYear').value=j.year||'';document.getElementById('bPages').value=j.pages||'';document.getElementById('bCover').value=j.cover||'';document.getElementById('isbnMsg').textContent='Tìm thấy qua '+j.source+'. Kiểm tra lại rồi bấm Thêm vào kệ nhé.';}catch(e){document.getElementById('isbnMsg').textContent=e.message;}}
+async function addBook(){const b={title:document.getElementById('bTitle').value.trim(),author:document.getElementById('bAuthor').value.trim(),genre:document.getElementById('bGenre').value.trim(),year:+document.getElementById('bYear').value||null,pages:+document.getElementById('bPages').value||null,cover:document.getElementById('bCover').value.trim(),location:document.getElementById('bLoc').value.trim(),isbn:document.getElementById('isbn').value.trim()};if(!b.title){alert('Nhập tiêu đề sách.');return;}await api('/api/books',{method:'POST',body:JSON.stringify(b)});document.getElementById('addMsg').textContent='Đã thêm và tự lưu trên máy chủ ✓';await loadAll();}
+function stars(b){let h='';for(let i=1;i<=5;i++)h+=`<span class="star ${i<=b.rating?'on':''}" onclick="rate('${b.id}',${i})">★</span>`;return h;}
+async function rate(id,n){const b=books.find(x=>x.id===id);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,rating:n})});await loadAll();}
+async function setProgress(id,v){const b=books.find(x=>x.id===id);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,progress:+v,status:+v>=100?'ready':(+v>0?'reading':b.status)})});await loadAll();}
+async function setStatus(id,v){const b=books.find(x=>x.id===id);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,status:v})});await loadAll();}
+async function setReader(id,v){const b=books.find(x=>x.id===id);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,reader:v})});await loadAll();}
+async function saveReview(id){const b=books.find(x=>x.id===id);const v=document.getElementById('rev-'+id).value;await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,review:v})});await loadAll();}
+async function delBook(id){if(!confirm('Xóa cuốn này?'))return;await api('/api/books/'+id,{method:'DELETE'});await loadAll();}
+function render(){
+  const q=(document.getElementById('q').value||'').toLowerCase(),fs=document.getElementById('fStatus').value,fr=document.getElementById('fRead').value;
+  const list=books.filter(b=>(!q||(b.title+' '+b.author+' '+b.genre).toLowerCase().includes(q))&&(!fs||b.status===fs)&&(!fr||(fr==='unread'?b.progress===0:fr==='reading'?b.progress>0&&b.progress<100:b.progress>=100)));
+  document.getElementById('bookList').innerHTML=list.map(b=>`<div class="card book">${b.cover?`<img class="cover" src="${b.cover}" alt="">`:'<div class="cover-ph">📖</div>'}<div style="flex:1;min-width:0"><b>${b.title}</b><br><span class="muted">${b.author||''} ${b.year?'· '+b.year:''} ${b.pages?'· '+b.pages+' trang':''}</span><br><span class="badge">${STATUS[b.status]||b.status}</span> <span class="muted">${b.genre||''} ${b.location?'· 📍 '+b.location:''}</span><br>${stars(b)}<br><div class="row"><select onchange="setReader('${b.id}',this.value)"><option value="">Ai đang đọc?</option>${members.map(m=>`<option ${b.reader===m.name?'selected':''}>${m.name}</option>`).join('')}</select><select onchange="setStatus('${b.id}',this.value)"><option value="ready" ${b.status==='ready'?'selected':''}>Sẵn sàng</option><option value="reading" ${b.status==='reading'?'selected':''}>Đang đọc</option><option value="lent" ${b.status==='lent'?'selected':''}>Cho mượn</option><option value="lost" ${b.status==='lost'?'selected':''}>Thất lạc</option></select></div><label class="muted">Tiến độ ${b.progress}%</label><input type="range" min="0" max="100" value="${b.progress}" onchange="setProgress('${b.id}',this.value)"><textarea id="rev-${b.id}" placeholder="Cảm nhận sau khi đọc…">${b.review||''}</textarea><div class="row"><button class="small green" onclick="saveReview('${b.id}')">Lưu cảm nhận</button><button class="small ghost" onclick="delBook('${b.id}')">Xóa</button></div></div></div>`).join('')||'<p class="muted">Chưa có sách. Thêm sách ở trên nhé.</p>';
+  document.getElementById('readingList').innerHTML=books.filter(b=>b.status==='reading'||(b.progress>0&&b.progress<100)).map(b=>`<p>📖 <b>${b.title}</b> — ${b.reader||'chưa chọn người đọc'} — ${b.progress}% <progress value="${b.progress}" max="100"></progress></p>`).join('')||'<p class="muted">Chưa có cuốn nào đang đọc.</p>';
+  document.getElementById('wishList').innerHTML=wishlist.map(w=>`<p>💝 <b>${w.title}</b> ${w.author?'- '+w.author:''} <i>${w.note||''}</i> <button class="small green" onclick="buyWish('${w.id}')">Đã mua → vào kệ</button> <button class="small ghost" onclick="delWish('${w.id}')">Xóa</button></p>`).join('')||'<p class="muted">Chưa có sách mong muốn.</p>';
+  document.getElementById('memberList').innerHTML=members.map(m=>`<p><span style="background:${m.color};border-radius:50%;padding:6px 10px">${m.avatar}</span> <b>${m.name}</b> <button class="small ghost" onclick="delMember('${m.id}')">Xóa</button></p>`).join('')||'<p class="muted">Chưa có thành viên.</p>';
+}
+async function addMember(){const name=document.getElementById('mName').value.trim();if(!name)return alert('Nhập tên thành viên.');await api('/api/members',{method:'POST',body:JSON.stringify({name,avatar:document.getElementById('mAvatar').value.trim()||'📚',color:document.getElementById('mColor').value})});await loadAll();}
+async function delMember(id){await api('/api/members/'+id,{method:'DELETE'});await loadAll();}
+async function addWish(){const title=document.getElementById('wTitle').value.trim();if(!title)return alert('Nhập tên sách.');await api('/api/wishlist',{method:'POST',body:JSON.stringify({title,author:document.getElementById('wAuthor').value.trim(),note:document.getElementById('wNote').value.trim()})});await loadAll();}
+async function buyWish(id){await api('/api/wishlist/'+id+'/buy',{method:'POST'});await loadAll();}
+async function delWish(id){await api('/api/wishlist/'+id,{method:'DELETE'});await loadAll();}
+async function exportJson(){const j=await api('/api/export');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(j,null,2)],{type:'application/json'}));a.download='thu-vien-sach-gia-dinh.json';a.click();}
+async function importJson(){const f=document.getElementById('importFile').files[0];if(!f)return alert('Chọn file JSON trước.');const j=JSON.parse(await f.text());await api('/api/import',{method:'POST',body:JSON.stringify({...j,mode:document.getElementById('importMode').value})});document.getElementById('ioMsg').textContent='Đã nhập xong ✓';await loadAll();}
+(async()=>{if(!token)return;try{me=(await api('/api/auth/me')).user;enterApp();}catch{token='';localStorage.removeItem('lib_token');}})();
+</script></body></html>
