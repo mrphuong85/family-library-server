@@ -76,27 +76,104 @@ app.post('/api/auth/change-password', auth, async (req, res) => {
 });
 
 // ---------- ISBN: Google Books truoc, Open Library du phong ----------
+// Thu tuu: Google Books -> Open Library /isbn/ -> Open Library bibkeys (nguon nay tra ca ten tac gia).
+// Ly do: Google Books khong khoa API hay bi gioi han luot tra trong ngay (loi 429),
+// con /isbn/ cua Open Library doi khi tra ve rong. Them ca doi ISBN-10 <-> ISBN-13
+// vi sach cu thuong chi in ISBN-10 ma kho du lieu lai luu ISBN-13 (va nguoc lai).
+function isbn10to13(i10){
+  if(!/^\d{9}[\dXx]$/.test(i10)) return null;
+  const body='978'+i10.slice(0,9);
+  let sum=0; for(let i=0;i<12;i++) sum+= +body[i]*(i%2===0?1:3);
+  return body+((10-(sum%10))%10);
+}
+function isbn13to10(i13){
+  if(!/^978\d{9}\d$/.test(i13)) return null;
+  const body=i13.slice(3,12);
+  let sum=0; for(let i=0;i<9;i++) sum+= +body[i]*(10-i);
+  const c=(11-(sum%11))%11;
+  return body+(c===10?'X':String(c));
+}
 app.get('/api/isbn/:isbn', async (req, res) => {
-  const isbn = String(req.params.isbn).replace(/[^0-9Xx]/g, '');
-  if (!isbn) return res.status(400).json({ error: 'Nhap ma ISBN.' });
-  try {
-    const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
-    const j = await r.json();
-    const info = j.items && j.items[0] && j.items[0].volumeInfo;
-    if (info) return res.json({ source: 'Google Books', title: info.title || '', author: (info.authors || []).join(', '), year: info.publishedDate ? parseInt(info.publishedDate.slice(0, 4)) : null, pages: info.pageCount || null, cover: (info.imageLinks && (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail)) || '', isbn, description: info.description || '' });
-  } catch (e) { console.error('Google Books loi:', e.message); }
-  try {
-    const r = await fetch(`https://openlibrary.org/isbn/${isbn}.json`);
-    if (r.ok) {
+  const raw = String(req.params.isbn).replace(/[^0-9Xx]/g, '');
+  if (!raw) return res.status(400).json({ error: 'Nhap ma ISBN.' });
+  const alt = raw.length === 10 ? isbn10to13(raw) : raw.length === 13 ? isbn13to10(raw) : null;
+  const candidates = alt && alt !== raw ? [raw, alt] : [raw];
+  const yearOf = (s) => { if (!s) return null; const m = String(s).match(/\d{4}/); return m ? parseInt(m[0]) : null; };
+  // Moi nguon chi doi toi da 8 giay: neu mot nguon treo thi chuyen sang nguon du phong,
+  // tranh truong hop app hien 'Dang tra cuu…' mai khong xong.
+  const fetchJson = async (url) => { const r = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'FamilyLibrary/1.0' } }); return r; };
+  for (const isbn of candidates) {
+    try {
+      const r = await fetchJson(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`);
       const j = await r.json();
-      let author = '';
-      if (j.authors && j.authors[0] && j.authors[0].key) {
-        const a = await fetch(`https://openlibrary.org${j.authors[0].key}.json`); const aj = await a.json(); author = aj.name || '';
+      const info = j.items && j.items[0] && j.items[0].volumeInfo;
+      if (info && info.title) return res.json({ source: 'Google Books', title: info.title || '', author: (info.authors || []).join(', '), year: info.publishedDate ? parseInt(info.publishedDate.slice(0, 4)) : null, pages: info.pageCount || null, cover: (info.imageLinks && (info.imageLinks.thumbnail || info.imageLinks.smallThumbnail)) || '', isbn, description: info.description || '' });
+    } catch (e) { console.error('Google Books loi:', e.message); }
+    try {
+      const r = await fetchJson(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`);
+      if (r.ok) {
+        const j = await r.json();
+        const b = j['ISBN:' + isbn];
+        if (b && b.title) {
+          return res.json({ source: 'Open Library', title: b.title || '', author: (b.authors || []).map(a => a.name).filter(Boolean).join(', '), year: yearOf(b.publish_date), pages: b.number_of_pages || null, cover: (b.cover && (b.cover.large || b.cover.medium || b.cover.small)) || '', isbn });
+        }
       }
-      return res.json({ source: 'Open Library', title: j.title || '', author, year: j.publish_date ? parseInt(String(j.publish_date).slice(-4)) : null, pages: j.number_of_pages || null, cover: j.covers && j.covers[0] ? `https://covers.openlibrary.org/b/id/${j.covers[0]}-M.jpg` : '', isbn });
-    }
-  } catch (e) { console.error('Open Library loi:', e.message); }
-  res.status(404).json({ error: 'Khong tim thay sach voi ISBN nay.' });
+    } catch (e) { console.error('Open Library bibkeys loi:', e.message); }
+    try {
+      const r = await fetchJson(`https://openlibrary.org/isbn/${isbn}.json`);
+      if (r.ok) {
+        const j = await r.json();
+        if (j.title) {
+          let author = '';
+          if (j.authors && j.authors[0] && j.authors[0].key) {
+            try { const a = await fetchJson(`https://openlibrary.org${j.authors[0].key}.json`); const aj = await a.json(); author = aj.name || ''; } catch (e) {}
+          }
+          return res.json({ source: 'Open Library', title: j.title || '', author, year: yearOf(j.publish_date), pages: j.number_of_pages || null, cover: j.covers && j.covers[0] ? `https://covers.openlibrary.org/b/id/${j.covers[0]}-M.jpg` : '', isbn });
+        }
+      }
+    } catch (e) { console.error('Open Library loi:', e.message); }
+  }
+  res.status(404).json({ error: 'Khong tim thay sach voi ISBN nay tren Google Books va Open Library. Ban nhap tay ten sach, tac gia roi bam Them vao ke nhe.' });
+});
+
+// ---------- Tim sach theo ten: Tiki (sach Viet) + Open Library ----------
+// ISBN tra khong ra thi tim theo ten: nhieu sach Viet co tren Tiki / Open Library theo ten
+// du ISBN cua an ban Viet Nam khong co trong kho quoc te.
+app.get('/api/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Nhap ten sach can tim.' });
+  const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' };
+  const fetchJson = async (url, headers) => { const r = await fetch(url, { signal: AbortSignal.timeout(8000), headers: headers || { 'User-Agent': 'FamilyLibrary/1.0' } }); return r; };
+  const results = [];
+  const push = (b) => { if (b && b.title) results.push({ title: nfc(String(b.title)), author: nfc(String(b.author || '')), year: b.year || null, pages: b.pages || null, cover: b.cover || '', isbn: b.isbn || '', price: b.price || null, source: b.source || '' }); };
+  // Tiki truoc: kho sach Viet, co ten/tac gia/nam/trang/bia/gia.
+  try {
+    const r = await fetchJson('https://tiki.vn/api/v2/products?q=' + encodeURIComponent(q) + '&limit=5', UA);
+    const j = await r.json();
+    const items = (j.data || []).slice(0, 5);
+    const details = await Promise.allSettled(items.map(it => fetchJson('https://tiki.vn/api/v2/products/' + it.id, UA).then(x => x.json())));
+    items.forEach((it, idx) => {
+      const d = details[idx].status === 'fulfilled' ? details[idx].value : null;
+      const spec = {};
+      ((d && d.specifications) || []).forEach(s => (s.attributes || []).forEach(a => { spec[a.name] = a.value; }));
+      const year = spec['Ngày xuất bản'] ? parseInt(String(spec['Ngày xuất bản']).slice(0, 4)) : null;
+      const pages = spec['Số trang'] ? parseInt(String(spec['Số trang']).replace(/[^0-9]/g, '')) || null : null;
+      push({ title: (d && d.name) || it.name, author: (d && d.authors && d.authors[0] && d.authors[0].name) || '', year, pages, cover: (d && d.thumbnail_url) || it.thumbnail_url || '', isbn: spec['ISBN'] || spec['Mã ISBN'] || '', price: it.price || null, source: 'Tiki' });
+    });
+  } catch (e) { console.error('Tiki loi:', e.message); }
+  // Open Library sau: sach quoc te va ban dich.
+  try {
+    const r = await fetchJson('https://openlibrary.org/search.json?q=' + encodeURIComponent(q) + '&limit=8&fields=title,author_name,first_publish_year,number_of_pages_median,cover_i,isbn');
+    const j = await r.json();
+    (j.docs || []).forEach(doc => {
+      const isbn13 = (doc.isbn || []).find(x => /^978/.test(x)) || (doc.isbn || [])[0] || '';
+      push({ title: doc.title, author: (doc.author_name || [])[0] || '', year: doc.first_publish_year || null, pages: doc.number_of_pages_median || null, cover: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : '', isbn: isbn13, source: 'Open Library' });
+    });
+  } catch (e) { console.error('Open Library search loi:', e.message); }
+  // Gop trung theo ten + tac gia.
+  const seen = new Set(), out = [];
+  for (const b of results) { const k = (b.title + '|' + b.author).toLowerCase(); if (seen.has(k)) continue; seen.add(k); out.push(b); if (out.length >= 10) break; }
+  res.json({ results: out });
 });
 
 // ---------- Books (theo tai khoan) ----------
