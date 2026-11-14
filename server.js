@@ -12,13 +12,21 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'doi-mat-khau-nay-truoc-khi-deploy';
 const DATA_FILE = path.join(__dirname, 'data.json');
 
+// Chuan hoa tieng Viet ve dang NFC (ky tu ghep san: ế, ể, ộ...).
+// Bo go tieng Viet doi khi gui len dang tach dau (chu cai + dau rieng le, vd e + dau mu + dau sac);
+// neu luu nguyen vay, mot so font hien thi dau bi lech, trong nhu bi cach chu.
+// NFC gom lai thanh 1 ky tu duy nhat truoc khi luu va khi doc du lieu cu.
+const nfc = s => typeof s === 'string' ? s.normalize('NFC') : s;
+const cleanStr = s => nfc(String(s == null ? '' : s)).trim();
+const nfcDeep = v => { if (typeof v === 'string') return v.normalize('NFC'); if (Array.isArray(v)) return v.map(nfcDeep); if (v && typeof v === 'object') { for (const k of Object.keys(v)) v[k] = nfcDeep(v[k]); } return v; };
+
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function loadData() {
   try {
-    if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    if (fs.existsSync(DATA_FILE)) return nfcDeep(JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')));
   } catch (e) { console.error('Khong doc duoc data.json, tao moi:', e.message); }
   return { users: [], books: [], members: [], wishlist: [] };
 }
@@ -43,7 +51,7 @@ app.post('/api/auth/register', async (req, res) => {
   if (String(password).length < 4) return res.status(400).json({ error: 'Mat khau it nhat 4 ky tu.' });
   const name = String(username).trim().toLowerCase();
   if (db.users.some(u => u.username === name)) return res.status(400).json({ error: 'Ten dang nhap da co nguoi dung.' });
-  const user = { id: uid(), username: name, displayName: (displayName || username).trim(), passwordHash: await bcrypt.hash(String(password), 10), createdAt: new Date().toISOString() };
+  const user = { id: uid(), username: name, displayName: cleanStr(displayName || username), passwordHash: await bcrypt.hash(String(password), 10), createdAt: new Date().toISOString() };
   db.users.push(user); saveData();
   res.json({ token: sign(user), user: pubUser(user) });
 });
@@ -96,13 +104,14 @@ app.get('/api/books', auth, (req, res) => res.json(db.books.filter(b => b.userId
 app.post('/api/books', auth, (req, res) => {
   const b = req.body || {};
   if (!b.title) return res.status(400).json({ error: 'Nhap tieu de sach.' });
-  const book = { id: uid(), userId: req.user.id, title: b.title, author: b.author || '', genre: b.genre || '', year: b.year || null, pages: b.pages || null, isbn: b.isbn || '', cover: b.cover || '', location: b.location || '', status: ['ready','reading','lent','lost'].includes(b.status) ? b.status : 'ready', reader: b.reader || '', progress: Math.max(0, Math.min(100, Number(b.progress) || 0)), rating: Math.max(0, Math.min(5, Number(b.rating) || 0)), review: b.review || '', createdAt: new Date().toISOString() };
+  const book = { id: uid(), userId: req.user.id, title: cleanStr(b.title), author: cleanStr(b.author), genre: cleanStr(b.genre), year: b.year || null, pages: b.pages || null, isbn: cleanStr(b.isbn), cover: cleanStr(b.cover), location: cleanStr(b.location), status: ['ready','reading','lent','lost'].includes(b.status) ? b.status : 'ready', reader: cleanStr(b.reader), progress: Math.max(0, Math.min(100, Number(b.progress) || 0)), rating: Math.max(0, Math.min(5, Number(b.rating) || 0)), review: cleanStr(b.review), createdAt: new Date().toISOString() };
   db.books.push(book); saveData(); res.status(201).json(book);
 });
 app.put('/api/books/:id', auth, (req, res) => {
   const book = db.books.find(b => b.id === req.params.id && b.userId === req.user.id);
   if (!book) return res.status(404).json({ error: 'Khong tim thay sach.' });
   Object.assign(book, req.body, { id: book.id, userId: book.userId });
+  for (const k of ['title', 'author', 'genre', 'cover', 'location', 'review', 'reader', 'isbn']) if (typeof book[k] === 'string') book[k] = book[k].normalize('NFC');
   if (book.progress != null) book.progress = Math.max(0, Math.min(100, Number(book.progress) || 0));
   saveData(); res.json(book);
 });
@@ -117,7 +126,7 @@ app.get('/api/members', auth, (req, res) => res.json(db.members.filter(m => m.us
 app.post('/api/members', auth, (req, res) => {
   const { name, avatar, color } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Nhap ten thanh vien.' });
-  const m = { id: uid(), userId: req.user.id, name, avatar: avatar || '📚', color: color || '#c97b4a' };
+  const m = { id: uid(), userId: req.user.id, name: cleanStr(name), avatar: cleanStr(avatar) || '📚', color: color || '#c97b4a' };
   db.members.push(m); saveData(); res.status(201).json(m);
 });
 app.delete('/api/members/:id', auth, (req, res) => {
@@ -131,7 +140,7 @@ app.get('/api/wishlist', auth, (req, res) => res.json(db.wishlist.filter(w => w.
 app.post('/api/wishlist', auth, (req, res) => {
   const { title, author, note } = req.body || {};
   if (!title) return res.status(400).json({ error: 'Nhap tieu de sach muon mua.' });
-  const w = { id: uid(), userId: req.user.id, title, author: author || '', note: note || '' };
+  const w = { id: uid(), userId: req.user.id, title: cleanStr(title), author: cleanStr(author), note: cleanStr(note) };
   db.wishlist.push(w); saveData(); res.status(201).json(w);
 });
 app.post('/api/wishlist/:id/buy', auth, (req, res) => {
@@ -153,7 +162,7 @@ app.get('/api/export', auth, (req, res) => {
 });
 app.post('/api/import', auth, (req, res) => {
   const { books = [], members = [], wishlist = [], mode = 'merge' } = req.body || {};
-  const clean = (arr) => (Array.isArray(arr) ? arr : []).map(x => ({ ...x, id: uid(), userId: req.user.id }));
+  const clean = (arr) => (Array.isArray(arr) ? arr : []).map(x => ({ ...nfcDeep(x), id: uid(), userId: req.user.id }));
   if (mode === 'replace') {
     db.books = db.books.filter(b => b.userId !== req.user.id).concat(clean(books));
     db.members = db.members.filter(m => m.userId !== req.user.id).concat(clean(members));
