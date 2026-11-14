@@ -22,6 +22,10 @@ main{max-width:1000px;margin:0 auto;padding:18px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1;min-width:140px}
 .star{font-size:22px;cursor:pointer;color:#d8c9a8}.star.on{color:#e8a317}
 .hidden{display:none}.muted{color:var(--muted);font-size:14px}
+.scanVideo{width:100%;max-width:480px;border-radius:12px;background:#000}
+.statGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center}
+.stat b{font-size:24px;display:block}
 .auth{max-width:420px;margin:60px auto}.auth h2{margin-top:0}
 progress{width:100%;accent-color:var(--brand2)}
 @media(max-width:600px){h1{font-size:20px}}
@@ -49,6 +53,7 @@ progress{width:100%;accent-color:var(--brand2)}
     <button data-tab="reading" onclick="showTab('reading',this)">📖 Đang đọc</button>
     <button data-tab="wish" onclick="showTab('wish',this)">💝 Mong muốn</button>
     <button data-tab="family" onclick="showTab('family',this)">👨‍👩‍👧 Gia đình</button>
+    <button data-tab="stats" onclick="showTab('stats',this)">📊 Thống kê</button>
     <button data-tab="io" onclick="showTab('io',this)">⬇️ Xuất / Nhập</button>
   </div>
 
@@ -59,7 +64,8 @@ progress{width:100%;accent-color:var(--brand2)}
       <select id="fRead" onchange="render()"><option value="">Tất cả</option><option value="unread">Chưa đọc</option><option value="reading">Đang đọc</option><option value="done">Đã đọc xong</option></select>
     </div></div>
     <div class="card"><h3 style="margin-top:0">➕ Thêm sách</h3>
-      <div class="row"><input id="isbn" placeholder="Nhập ISBN rồi bấm Tra cứu"><button class="green" onclick="lookupIsbn()">Tra ISBN</button></div>
+      <div class="row"><input id="isbn" placeholder="Nhập ISBN rồi bấm Tra cứu"><button class="green" onclick="lookupIsbn()">Tra ISBN</button><button onclick="startScan()">📷 Quét mã vạch</button></div>
+      <div id="scanBox" class="hidden" style="margin-top:10px"><video id="scanVideo" class="scanVideo" playsinline muted></video><p id="scanMsg" class="muted">Đưa mã vạch sau bìa sách vào khung hình…</p><button class="ghost" onclick="stopScan()">Dừng quét</button></div>
       <p id="isbnMsg" class="muted"></p>
       <div class="row"><input id="bTitle" placeholder="Tiêu đề *"><input id="bAuthor" placeholder="Tác giả"></div><br>
       <div class="row"><input id="bGenre" placeholder="Thể loại"><input id="bYear" type="number" placeholder="Năm xuất bản"><input id="bPages" type="number" placeholder="Số trang"></div><br>
@@ -85,6 +91,8 @@ progress{width:100%;accent-color:var(--brand2)}
     <p></p><label>Nhập file JSON <input type="file" id="importFile" accept=".json"></label>
     <div class="row"><select id="importMode"><option value="merge">Gộp vào kệ hiện tại</option><option value="replace">Thay thế toàn bộ</option></select><button class="green" onclick="importJson()">Nhập</button></div>
     <p id="ioMsg" class="muted"></p></div></section>
+
+  <section id="tab-stats" class="hidden"><div class="card"><h3 style="margin-top:0">📊 Thống kê đọc sách</h3><div id="statsBox"></div></div></section>
 </div>
 </main>
 <script>
@@ -105,7 +113,7 @@ function logout(){token='';localStorage.removeItem('lib_token');location.reload(
 async function changePass(){const o=prompt('Mật khẩu cũ:'),n=prompt('Mật khẩu mới (ít nhất 4 ký tự):');if(!o||!n)return;try{await api('/api/auth/change-password',{method:'POST',body:JSON.stringify({oldPassword:o,newPassword:n})});alert('Đã đổi mật khẩu.');}catch(e){alert(e.message);}}
 async function enterApp(){document.getElementById('authBox').classList.add('hidden');document.getElementById('app').classList.remove('hidden');document.getElementById('userBar').classList.remove('hidden');document.getElementById('hello').textContent='Xin chào, '+(me.displayName||me.username)+' 👋';await loadAll();}
 async function loadAll(){books=await api('/api/books');members=await api('/api/members');wishlist=await api('/api/wishlist');render();}
-function showTab(id,btn){document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['shelf','reading','wish','family','io'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==id));}
+function showTab(id,btn){document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['shelf','reading','wish','family','io','stats'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==id));}
 async function lookupIsbn(){const isbn=document.getElementById('isbn').value.trim();if(!isbn)return;document.getElementById('isbnMsg').textContent='Đang tra cứu…';try{const j=await api('/api/isbn/'+encodeURIComponent(isbn));document.getElementById('bTitle').value=j.title||'';document.getElementById('bAuthor').value=j.author||'';document.getElementById('bYear').value=j.year||'';document.getElementById('bPages').value=j.pages||'';document.getElementById('bCover').value=j.cover||'';document.getElementById('isbnMsg').textContent='Tìm thấy qua '+j.source+'. Kiểm tra lại rồi bấm Thêm vào kệ nhé.';}catch(e){document.getElementById('isbnMsg').textContent=e.message;}}
 async function addBook(){const t=id=>nfc(document.getElementById(id).value.trim());const b={title:t('bTitle'),author:t('bAuthor'),genre:t('bGenre'),year:+document.getElementById('bYear').value||null,pages:+document.getElementById('bPages').value||null,cover:t('bCover'),location:t('bLoc'),isbn:t('isbn')};if(!b.title){alert('Nhập tiêu đề sách.');return;}await api('/api/books',{method:'POST',body:JSON.stringify(b)});document.getElementById('addMsg').textContent='Đã thêm và tự lưu trên máy chủ ✓';await loadAll();}
 function stars(b){let h='';for(let i=1;i<=5;i++)h+=`<span class="star ${i<=b.rating?'on':''}" onclick="rate('${b.id}',${i})">★</span>`;return h;}
@@ -122,7 +130,55 @@ function render(){
   document.getElementById('readingList').innerHTML=books.filter(b=>b.status==='reading'||(b.progress>0&&b.progress<100)).map(b=>`<p>📖 <b>${nfc(b.title)}</b> — ${nfc(b.reader||'chưa chọn người đọc')} — ${b.progress}% <progress value="${b.progress}" max="100"></progress></p>`).join('')||'<p class="muted">Chưa có cuốn nào đang đọc.</p>';
   document.getElementById('wishList').innerHTML=wishlist.map(w=>`<p>💝 <b>${nfc(w.title)}</b> ${w.author?'- '+nfc(w.author):''} <i>${nfc(w.note||'')}</i> <button class="small green" onclick="buyWish('${w.id}')">Đã mua → vào kệ</button> <button class="small ghost" onclick="delWish('${w.id}')">Xóa</button></p>`).join('')||'<p class="muted">Chưa có sách mong muốn.</p>';
   document.getElementById('memberList').innerHTML=members.map(m=>`<p><span style="background:${m.color};border-radius:50%;padding:6px 10px">${m.avatar}</span> <b>${nfc(m.name)}</b> <button class="small ghost" onclick="delMember('${m.id}')">Xóa</button></p>`).join('')||'<p class="muted">Chưa có thành viên.</p>';
+  renderStats();
 }
+function renderStats(){
+  const box=document.getElementById('statsBox');if(!box)return;
+  const done=books.filter(b=>(b.progress||0)>=100), reading=books.filter(b=>(b.progress||0)>0&&(b.progress||0)<100);
+  const pagesDone=done.reduce((s,b)=>s+(b.pages||0),0);
+  const pagesRead=books.reduce((s,b)=>s+Math.round((b.pages||0)*(b.progress||0)/100),0);
+  const pagesTotal=books.reduce((s,b)=>s+(b.pages||0),0);
+  const countBy=(arr,key)=>{const m={};arr.forEach(x=>{const k=nfc(x[key]||'Chưa rõ').trim()||'Chưa rõ';m[k]=(m[k]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5);};
+  const topGenre=countBy(books,'genre'), topAuthor=countBy(books.filter(b=>b.author),'author');
+  const byReader={};done.forEach(b=>{const r=nfc(b.reader||'Chưa chọn').trim()||'Chưa chọn';byReader[r]=(byReader[r]||0)+1;});
+  const rank=Object.entries(byReader).sort((a,b)=>b[1]-a[1]);
+  const topRated=[...books].filter(b=>(b.rating||0)>=4).sort((a,b)=>(b.rating||0)-(a.rating||0)).slice(0,5);
+  const stat=(n,l)=>`<div class="stat"><b>${n}</b><span class="muted">${l}</span></div>`;
+  const list=(title,items,fmt)=>items.length?`<h4>${title}</h4>`+items.map(fmt).join(''):'';
+  box.innerHTML=`<div class="statGrid">${stat(books.length,'Tổng số sách')}${stat(done.length,'Đã đọc xong')}${stat(reading.length,'Đang đọc')}${stat(pagesRead.toLocaleString('vi-VN'),'Trang đã đọc')}${stat(pagesTotal.toLocaleString('vi-VN'),'Tổng số trang')}${stat(members.length,'Thành viên')}</div>`
+  +list('📚 Thể loại đọc nhiều nhất',topGenre,([g,c])=>`<p>• <b>${nfc(g)}</b> — ${c} cuốn</p>`)
+  +list('✍️ Tác giả có nhiều sách nhất',topAuthor,([a,c])=>`<p>• <b>${nfc(a)}</b> — ${c} cuốn</p>`)
+  +list('🏆 Xếp hạng đọc xong',rank,([r,c],i)=>`<p>${['🥇','🥈','🥉'][i]||'•'} <b>${nfc(r)}</b> — ${c} cuốn</p>`)
+  +list('⭐ Sách được chấm sao cao nhất',topRated,b=>`<p>• <b>${nfc(b.title)}</b> — ${'★'.repeat(b.rating||0)}</p>`);
+}
+// Quét mã vạch ISBN bằng camera: dùng BarcodeDetector có sẵn trên Chrome/Android trước,
+// nếu máy không có thì tải thư viện ZXing (cần mạng) để quét. Quét được mã 10/13 số là tự tra cứu.
+let scanStream=null, scanTimer=null, zxingReader=null, scanning=false;
+async function loadZxing(){if(window.ZXing)return true;return new Promise(res=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';s.onload=()=>res(!!window.ZXing);s.onerror=()=>res(false);document.head.appendChild(s);});}
+async function startScan(){
+  const box=document.getElementById('scanBox'),video=document.getElementById('scanVideo'),msg=document.getElementById('scanMsg');
+  box.classList.remove('hidden');msg.textContent='Đang mở camera…';
+  try{scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});}
+  catch(e){msg.textContent='Không mở được camera. Kiểm tra quyền camera của trình duyệt rồi thử lại, hoặc gõ ISBN tay.';return;}
+  video.srcObject=scanStream;await video.play().catch(()=>{});scanning=true;
+  const found=code=>{code=String(code||'').replace(/[^0-9Xx]/g,'');if(code.length!==10&&code.length!==13)return;stopScan();document.getElementById('isbn').value=code;document.getElementById('isbnMsg').textContent='Đã quét được mã '+code+'. Đang tra cứu…';lookupIsbn();};
+  if('BarcodeDetector' in window){
+    try{const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+      msg.textContent='Đưa mã vạch sau bìa sách vào khung hình…';
+      const tick=async()=>{if(!scanning)return;try{const codes=await det.detect(video);if(codes&&codes[0]){found(codes[0].rawValue);return;}}catch(e){}scanTimer=setTimeout(tick,300);};
+      tick();return;
+    }catch(e){}
+  }
+  msg.textContent='Đang tải bộ đọc mã vạch…';
+  if(await loadZxing()){
+    try{zxingReader=new ZXing.BrowserMultiFormatReader();
+      zxingReader.decodeFromVideoDevice(null,video,(result,err)=>{if(!scanning)return;if(result)found(result.getText());});
+      msg.textContent='Đưa mã vạch sau bìa sách vào khung hình…';return;
+    }catch(e){}
+  }
+  msg.textContent='Điện thoại này không hỗ trợ quét mã vạch trong trình duyệt. Bạn gõ ISBN tay nhé.';
+}
+function stopScan(){scanning=false;clearTimeout(scanTimer);try{if(zxingReader)zxingReader.reset();}catch(e){}zxingReader=null;if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null;}const v=document.getElementById('scanVideo');if(v)v.srcObject=null;document.getElementById('scanBox').classList.add('hidden');}
 async function addMember(){const name=nfc(document.getElementById('mName').value.trim());if(!name)return alert('Nhập tên thành viên.');await api('/api/members',{method:'POST',body:JSON.stringify({name,avatar:nfc(document.getElementById('mAvatar').value.trim())||'📚',color:document.getElementById('mColor').value})});await loadAll();}
 async function delMember(id){await api('/api/members/'+id,{method:'DELETE'});await loadAll();}
 async function addWish(){const title=nfc(document.getElementById('wTitle').value.trim());if(!title)return alert('Nhập tên sách.');await api('/api/wishlist',{method:'POST',body:JSON.stringify({title,author:nfc(document.getElementById('wAuthor').value.trim()),note:nfc(document.getElementById('wNote').value.trim())})});await loadAll();}
