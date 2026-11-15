@@ -62,6 +62,7 @@ progress{width:100%;accent-color:var(--brand2)}
       <input id="q" placeholder="Tìm tên sách, tác giả, thể loại…" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onSearchInput(event)" oncompositionstart="isComposing=true" oncompositionend="isComposing=false;render()">
       <select id="fStatus" onchange="render()"><option value="">Tất cả trạng thái</option><option value="ready">Sẵn sàng</option><option value="reading">Đang đọc</option><option value="lent">Đã cho mượn</option><option value="lost">Thất lạc</option></select>
       <select id="fRead" onchange="render()"><option value="">Tất cả</option><option value="unread">Chưa đọc</option><option value="reading">Đang đọc</option><option value="done">Đã đọc xong</option></select>
+      <select id="fGenre" onchange="render()"><option value="">Tất cả thể loại</option></select>
     </div></div>
     <div class="card"><h3 style="margin-top:0">➕ Thêm sách</h3>
       <div class="row"><input id="isbn" placeholder="Nhập ISBN rồi bấm Tra cứu"><button class="green" onclick="lookupIsbn()">Tra ISBN</button><button onclick="startScan()">📷 Quét mã vạch</button></div>
@@ -70,8 +71,13 @@ progress{width:100%;accent-color:var(--brand2)}
       <div class="row"><input id="titleQ" placeholder="Hoặc gõ tên sách để tìm (sách Việt)…"><button class="green" onclick="searchByTitle()">Tìm theo tên</button></div>
       <div id="titleResults" style="margin-top:10px"></div>
       <div class="row"><input id="bTitle" placeholder="Tiêu đề *"><input id="bAuthor" placeholder="Tác giả"></div><br>
-      <div class="row"><input id="bGenre" placeholder="Thể loại"><input id="bYear" type="number" placeholder="Năm xuất bản"><input id="bPages" type="number" placeholder="Số trang"></div><br>
+      <div class="row"><input id="bGenre" list="genreList" placeholder="Thể loại — bấm để chọn"><input id="bYear" type="number" placeholder="Năm xuất bản"><input id="bPages" type="number" placeholder="Số trang"></div><br>
+      <datalist id="genreList"><option value="Tiểu thuyết"></option><option value="Truyện ngắn"></option><option value="Thơ"></option><option value="Văn học"></option><option value="Truyện tranh"></option><option value="Truyện thiếu nhi"></option><option value="Sách thiếu nhi"></option><option value="Sách giáo khoa"></option><option value="Sách tham khảo"></option><option value="Khoa học"></option><option value="Lịch sử"></option><option value="Kỹ năng sống"></option><option value="Tâm lý"></option><option value="Kinh doanh"></option><option value="Hồi ký - Tự truyện"></option><option value="Trinh thám"></option><option value="Giả tưởng - Viễn tưởng"></option><option value="Nấu ăn"></option><option value="Du lịch"></option><option value="Nghệ thuật"></option></datalist>
+      <div class="row"><input id="bPublisher" placeholder="Nhà xuất bản (NXB)"><input id="bPrice" type="number" placeholder="Giá bìa (VNĐ)"></div><br>
       <div class="row"><input id="bCover" placeholder="Link ảnh bìa (tùy chọn)"><input id="bLoc" placeholder="Vị trí: Tủ phòng khách…"></div><br>
+      <div class="row"><button type="button" onclick="document.getElementById('coverFile').click()">📷 Tải ảnh bìa lên</button><input type="file" id="coverFile" accept="image/*" class="hidden" onchange="uploadCover(this)"><button type="button" id="coverClearBtn" class="ghost hidden" onclick="clearCover()">✕ Xóa ảnh</button></div>
+      <img id="coverPreview" class="hidden" style="max-width:90px;max-height:120px;border-radius:8px;margin-top:8px" alt="Ảnh bìa đã chọn">
+      <p class="muted">Ảnh chụp bằng điện thoại cũng được: bấm nút trên, chọn ảnh bìa sách là xong, không cần link ảnh.</p>
       <button onclick="addBook()">Thêm vào kệ</button> <span id="addMsg" class="muted"></span>
     </div>
     <div id="bookList" class="grid"></div>
@@ -92,7 +98,12 @@ progress{width:100%;accent-color:var(--brand2)}
     <button onclick="exportJson()">Xuất file JSON</button>
     <p></p><label>Nhập file JSON <input type="file" id="importFile" accept=".json"></label>
     <div class="row"><select id="importMode"><option value="merge">Gộp vào kệ hiện tại</option><option value="replace">Thay thế toàn bộ</option></select><button class="green" onclick="importJson()">Nhập</button></div>
-    <p id="ioMsg" class="muted"></p></div></section>
+    <p id="ioMsg" class="muted"></p>
+    <hr>
+    <p><b>📊 Nhập sách từ file Excel / CSV</b><br><span class="muted">Hàng đầu của file là tên cột: Tên sách, Tác giả, Thể loại, NXB, Năm, Số trang, Giá bìa, Vị trí, ISBN, Trạng thái. Chỉ cần cột Tên sách, các cột khác có thể để trống. <a href="#" onclick="downloadTemplate(event)">Tải file mẫu</a></span></p>
+    <label>Chọn file Excel (.xlsx) hoặc CSV <input type="file" id="excelFile" accept=".xlsx,.xls,.csv"></label>
+    <div class="row" style="margin-top:8px"><button class="green" onclick="previewExcel()">Xem trước</button></div>
+    <div id="excelPreview" style="margin-top:10px"></div></div></section>
 
   <section id="tab-stats" class="hidden"><div class="card"><h3 style="margin-top:0">📊 Thống kê đọc sách</h3><div id="statsBox"></div></div></section>
 </div>
@@ -119,9 +130,32 @@ async function loadAll(){books=await api('/api/books');members=await api('/api/m
 function showTab(id,btn){document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');['shelf','reading','wish','family','io','stats'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==id));}
 let titleCandidates=[];
 async function searchByTitle(){const q=document.getElementById('titleQ').value.trim();if(!q)return;const box=document.getElementById('titleResults');box.innerHTML='<p class="muted">Đang tìm…</p>';try{const j=await api('/api/search?q='+encodeURIComponent(q));titleCandidates=j.results||[];if(!titleCandidates.length){box.innerHTML='<p class="muted">Không tìm thấy sách với tên này. Bạn nhập tay ở dưới nhé.</p>';return;}box.innerHTML=titleCandidates.map((b,i)=>`<p>📖 <b>${esc(b.title)}</b>${b.author?' — '+esc(b.author):''}${b.year?' ('+b.year+')':''}${b.price?' — '+Number(b.price).toLocaleString('vi-VN')+'đ':''} <span class="muted">[${esc(b.source)}]</span> <button class="small green" onclick="pickTitle(${i})">Chọn</button></p>`).join('');}catch(e){box.innerHTML='<p class="muted">'+esc(e.message)+'</p>';}}
-function pickTitle(i){const b=titleCandidates[i];if(!b)return;document.getElementById('bTitle').value=b.title||'';document.getElementById('bAuthor').value=b.author||'';document.getElementById('bYear').value=b.year||'';document.getElementById('bPages').value=b.pages||'';document.getElementById('bCover').value=b.cover||'';if(b.isbn)document.getElementById('isbn').value=b.isbn;document.getElementById('isbnMsg').textContent='Đã điền từ '+(b.source||'kết quả tìm kiếm')+'. Kiểm tra lại rồi bấm Thêm vào kệ nhé.';}
-async function lookupIsbn(){const isbn=document.getElementById('isbn').value.trim();if(!isbn)return;document.getElementById('isbnMsg').textContent='Đang tra cứu…';try{const j=await api('/api/isbn/'+encodeURIComponent(isbn));document.getElementById('bTitle').value=j.title||'';document.getElementById('bAuthor').value=j.author||'';document.getElementById('bYear').value=j.year||'';document.getElementById('bPages').value=j.pages||'';document.getElementById('bCover').value=j.cover||'';document.getElementById('isbnMsg').textContent='Tìm thấy qua '+j.source+'. Kiểm tra lại rồi bấm Thêm vào kệ nhé.';}catch(e){document.getElementById('isbnMsg').textContent=e.message;}}
-async function addBook(){const t=id=>nfc(document.getElementById(id).value.trim());const b={title:t('bTitle'),author:t('bAuthor'),genre:t('bGenre'),year:+document.getElementById('bYear').value||null,pages:+document.getElementById('bPages').value||null,cover:t('bCover'),location:t('bLoc'),isbn:t('isbn')};if(!b.title){alert('Nhập tiêu đề sách.');return;}await api('/api/books',{method:'POST',body:JSON.stringify(b)});document.getElementById('addMsg').textContent='Đã thêm và tự lưu trên máy chủ ✓';await loadAll();}
+function pickTitle(i){const b=titleCandidates[i];if(!b)return;document.getElementById('bTitle').value=b.title||'';document.getElementById('bAuthor').value=b.author||'';document.getElementById('bYear').value=b.year||'';document.getElementById('bPages').value=b.pages||'';resetCoverUpload();document.getElementById('bCover').value=b.cover||'';if(b.isbn)document.getElementById('isbn').value=b.isbn;document.getElementById('isbnMsg').textContent='Đã điền từ '+(b.source||'kết quả tìm kiếm')+'. Kiểm tra lại rồi bấm Thêm vào kệ nhé.';}
+async function lookupIsbn(){const isbn=document.getElementById('isbn').value.trim();if(!isbn)return;document.getElementById('isbnMsg').textContent='Đang tra cứu…';try{const j=await api('/api/isbn/'+encodeURIComponent(isbn));document.getElementById('bTitle').value=j.title||'';document.getElementById('bAuthor').value=j.author||'';document.getElementById('bYear').value=j.year||'';document.getElementById('bPages').value=j.pages||'';resetCoverUpload();document.getElementById('bCover').value=j.cover||'';document.getElementById('isbnMsg').textContent='Tìm thấy qua '+j.source+'. Kiểm tra lại rồi bấm Thêm vào kệ nhé.';}catch(e){document.getElementById('isbnMsg').textContent=e.message;}}
+// Tai anh bia tu may/dien thoai: anh duoc thu nho con toi da 400px roi luu cung sach tren may chu,
+// khong can link anh. Neu vua tai anh vua co link thi anh tai len duoc uu tien.
+let coverData='';
+function resetCoverUpload(){coverData='';const p=document.getElementById('coverPreview');if(p){p.classList.add('hidden');p.src='';}const c=document.getElementById('coverClearBtn');if(c)c.classList.add('hidden');const f=document.getElementById('coverFile');if(f)f.value='';}
+function uploadCover(input){
+  const f=input.files&&input.files[0];if(!f)return;
+  if(!/^image\//.test(f.type)){alert('Chọn file ảnh (JPG, PNG…).');return;}
+  if(f.size>10*1024*1024){alert('Ảnh lớn quá 10MB, chọn ảnh nhỏ hơn nhé.');return;}
+  const img=new Image();
+  img.onload=()=>{
+    const scale=Math.min(1,400/img.width);
+    const cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(img.width*scale));cv.height=Math.max(1,Math.round(img.height*scale));
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    coverData=cv.toDataURL('image/jpeg',0.82);
+    const p=document.getElementById('coverPreview');p.src=coverData;p.classList.remove('hidden');
+    document.getElementById('coverClearBtn').classList.remove('hidden');
+    document.getElementById('bCover').value='';
+    document.getElementById('isbnMsg').textContent='Đã tải ảnh bìa lên ✓ (ảnh sẽ lưu cùng sách khi bấm Thêm vào kệ).';
+  };
+  img.onerror=()=>alert('Không đọc được file ảnh này, thử ảnh khác nhé.');
+  img.src=URL.createObjectURL(f);
+}
+function clearCover(){resetCoverUpload();document.getElementById('isbnMsg').textContent='';}
+async function addBook(){const t=id=>nfc(document.getElementById(id).value.trim());const b={title:t('bTitle'),author:t('bAuthor'),genre:t('bGenre'),year:+document.getElementById('bYear').value||null,pages:+document.getElementById('bPages').value||null,cover:coverData||t('bCover'),location:t('bLoc'),isbn:t('isbn'),publisher:t('bPublisher'),price:+document.getElementById('bPrice').value||null};if(!b.title){alert('Nhập tiêu đề sách.');return;}await api('/api/books',{method:'POST',body:JSON.stringify(b)}).then(nb=>{document.getElementById('addMsg').textContent='Đã thêm và tự lưu trên máy chủ ✓ · Mã sách: '+(nb.code||'');});resetCoverUpload();await loadAll();}
 function stars(b){let h='';for(let i=1;i<=5;i++)h+=`<span class="star ${i<=b.rating?'on':''}" onclick="rate('${b.id}',${i})">★</span>`;return h;}
 async function rate(id,n){const b=books.find(x=>x.id===id);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,rating:n})});await loadAll();}
 async function setProgress(id,v){const b=books.find(x=>x.id===id);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,progress:+v,status:+v>=100?'ready':(+v>0?'reading':b.status)})});await loadAll();}
@@ -130,10 +164,13 @@ async function setReader(id,v){const b=books.find(x=>x.id===id);await api('/api/
 async function saveReview(id){const b=books.find(x=>x.id===id);const v=nfc(document.getElementById('rev-'+id).value);await api('/api/books/'+id,{method:'PUT',body:JSON.stringify({...b,review:v})});await loadAll();}
 async function delBook(id){if(!confirm('Xóa cuốn này?'))return;await api('/api/books/'+id,{method:'DELETE'});await loadAll();}
 function render(){
-  const q=nfc(document.getElementById('q').value||'').toLowerCase(),fs=document.getElementById('fStatus').value,fr=document.getElementById('fRead').value;
-  const list=books.filter(b=>(!q||nfc(b.title+' '+b.author+' '+b.genre).toLowerCase().includes(q))&&(!fs||b.status===fs)&&(!fr||(fr==='unread'?b.progress===0:fr==='reading'?b.progress>0&&b.progress<100:b.progress>=100)));
-  document.getElementById('bookList').innerHTML=list.map(b=>`<div class="card book">${b.cover?`<img class="cover" src="${b.cover}" alt="">`:'<div class="cover-ph">📖</div>'}<div style="flex:1;min-width:0"><b>${nfc(b.title)}</b><br><span class="muted">${nfc(b.author||'')} ${b.year?'· '+b.year:''} ${b.pages?'· '+b.pages+' trang':''}</span><br><span class="badge">${STATUS[b.status]||b.status}</span> <span class="muted">${nfc(b.genre||'')} ${b.location?'· 📍 '+nfc(b.location):''}</span><br>${stars(b)}<br><div class="row"><select onchange="setReader('${b.id}',this.value)"><option value="">Ai đang đọc?</option>${members.map(m=>`<option ${nfc(b.reader||'')===nfc(m.name)?'selected':''}>${nfc(m.name)}</option>`).join('')}</select><select onchange="setStatus('${b.id}',this.value)"><option value="ready" ${b.status==='ready'?'selected':''}>Sẵn sàng</option><option value="reading" ${b.status==='reading'?'selected':''}>Đang đọc</option><option value="lent" ${b.status==='lent'?'selected':''}>Cho mượn</option><option value="lost" ${b.status==='lost'?'selected':''}>Thất lạc</option></select></div><label class="muted">Tiến độ ${b.progress}%</label><input type="range" min="0" max="100" value="${b.progress}" onchange="setProgress('${b.id}',this.value)"><textarea id="rev-${b.id}" placeholder="Cảm nhận sau khi đọc…">${nfc(b.review||'')}</textarea><div class="row"><button class="small green" onclick="saveReview('${b.id}')">Lưu cảm nhận</button><button class="small ghost" onclick="delBook('${b.id}')">Xóa</button></div></div></div>`).join('')||'<p class="muted">Chưa có sách. Thêm sách ở trên nhé.</p>';
-  document.getElementById('readingList').innerHTML=books.filter(b=>b.status==='reading'||(b.progress>0&&b.progress<100)).map(b=>`<p>📖 <b>${nfc(b.title)}</b> — ${nfc(b.reader||'chưa chọn người đọc')} — ${b.progress}% <progress value="${b.progress}" max="100"></progress></p>`).join('')||'<p class="muted">Chưa có cuốn nào đang đọc.</p>';
+  const q=nfc(document.getElementById('q').value||'').toLowerCase(),fs=document.getElementById('fStatus').value,fr=document.getElementById('fRead').value,fgEl=document.getElementById('fGenre'),fg=fgEl.value;
+  // Bo loc the loai: chi hien cac the loai dang co tren ke (giu lua chon hien tai).
+  const genres=[...new Set(books.map(b=>nfc(b.genre||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi'));
+  fgEl.innerHTML='<option value="">Tất cả thể loại</option>'+genres.map(g=>`<option ${g===fg?'selected':''}>${esc(g)}</option>`).join('');
+  const list=books.filter(b=>(!q||nfc(b.title+' '+b.author+' '+b.genre+' '+(b.code||'')+' '+(b.publisher||'')).toLowerCase().includes(q))&&(!fs||b.status===fs)&&(!fr||(fr==='unread'?b.progress===0:fr==='reading'?b.progress>0&&b.progress<100:b.progress>=100))&&(!fg||nfc(b.genre||'').trim()===fg));
+  document.getElementById('bookList').innerHTML=list.map(b=>`<div class="card book">${b.cover?`<img class="cover" src="${b.cover}" alt="">`:'<div class="cover-ph">📖</div>'}<div style="flex:1;min-width:0"><b>${nfc(b.title)}</b><br><span class="muted">${nfc(b.author||'')} ${b.year?'· '+b.year:''} ${b.pages?'· '+b.pages+' trang':''} ${b.publisher?'· '+nfc(b.publisher):''} ${b.price?'· '+Number(b.price).toLocaleString('vi-VN')+'đ':''}</span><br>${b.code?`<span class="badge">🔖 ${nfc(b.code)}</span> `:''}<span class="badge">${STATUS[b.status]||b.status}</span> <span class="muted">${nfc(b.genre||'')} ${b.location?'· 📍 '+nfc(b.location):''}</span><br>${stars(b)}<br><div class="row"><select onchange="setReader('${b.id}',this.value)"><option value="">Ai đang đọc?</option>${members.map(m=>`<option ${nfc(b.reader||'')===nfc(m.name)?'selected':''}>${nfc(m.name)}</option>`).join('')}</select><select onchange="setStatus('${b.id}',this.value)"><option value="ready" ${b.status==='ready'?'selected':''}>Sẵn sàng</option><option value="reading" ${b.status==='reading'?'selected':''}>Đang đọc</option><option value="lent" ${b.status==='lent'?'selected':''}>Cho mượn</option><option value="lost" ${b.status==='lost'?'selected':''}>Thất lạc</option></select></div><label class="muted">Tiến độ ${b.progress}%</label><input type="range" min="0" max="100" value="${b.progress}" onchange="setProgress('${b.id}',this.value)"><textarea id="rev-${b.id}" placeholder="Cảm nhận sau khi đọc…">${nfc(b.review||'')}</textarea><div class="row"><button class="small green" onclick="saveReview('${b.id}')">Lưu cảm nhận</button><button class="small ghost" onclick="delBook('${b.id}')">Xóa</button></div></div></div>`).join('')||'<p class="muted">Chưa có sách. Thêm sách ở trên nhé.</p>';
+  document.getElementById('readingList').innerHTML=books.filter(b=>b.status==='reading'||(b.progress>0&&b.progress<100)).map(b=>`<p>📖 <b>${nfc(b.title)}</b>${b.code?` · ${nfc(b.code)}`:''} — ${nfc(b.reader||'chưa chọn người đọc')} — ${b.progress}% <progress value="${b.progress}" max="100"></progress></p>`).join('')||'<p class="muted">Chưa có cuốn nào đang đọc.</p>';
   document.getElementById('wishList').innerHTML=wishlist.map(w=>`<p>💝 <b>${nfc(w.title)}</b> ${w.author?'- '+nfc(w.author):''} <i>${nfc(w.note||'')}</i> <button class="small green" onclick="buyWish('${w.id}')">Đã mua → vào kệ</button> <button class="small ghost" onclick="delWish('${w.id}')">Xóa</button></p>`).join('')||'<p class="muted">Chưa có sách mong muốn.</p>';
   document.getElementById('memberList').innerHTML=members.map(m=>`<p><span style="background:${m.color};border-radius:50%;padding:6px 10px">${m.avatar}</span> <b>${nfc(m.name)}</b> <button class="small ghost" onclick="delMember('${m.id}')">Xóa</button></p>`).join('')||'<p class="muted">Chưa có thành viên.</p>';
   renderStats();
@@ -149,10 +186,15 @@ function renderStats(){
   const byReader={};done.forEach(b=>{const r=nfc(b.reader||'Chưa chọn').trim()||'Chưa chọn';byReader[r]=(byReader[r]||0)+1;});
   const rank=Object.entries(byReader).sort((a,b)=>b[1]-a[1]);
   const topRated=[...books].filter(b=>(b.rating||0)>=4).sort((a,b)=>(b.rating||0)-(a.rating||0)).slice(0,5);
+  const totalValue=books.reduce((s,b)=>s+(Number(b.price)||0),0);
+  const byStatus={ready:0,reading:0,lent:0,lost:0};books.forEach(b=>{if(byStatus[b.status]!=null)byStatus[b.status]++;});
+  const topPub=countBy(books.filter(b=>b.publisher),'publisher');
   const stat=(n,l)=>`<div class="stat"><b>${n}</b><span class="muted">${l}</span></div>`;
   const list=(title,items,fmt)=>items.length?`<h4>${title}</h4>`+items.map(fmt).join(''):'';
-  box.innerHTML=`<div class="statGrid">${stat(books.length,'Tổng số sách')}${stat(done.length,'Đã đọc xong')}${stat(reading.length,'Đang đọc')}${stat(pagesRead.toLocaleString('vi-VN'),'Trang đã đọc')}${stat(pagesTotal.toLocaleString('vi-VN'),'Tổng số trang')}${stat(members.length,'Thành viên')}</div>`
+  box.innerHTML=`<div class="statGrid">${stat(books.length,'Tổng số sách')}${stat(done.length,'Đã đọc xong')}${stat(reading.length,'Đang đọc')}${stat(pagesRead.toLocaleString('vi-VN'),'Trang đã đọc')}${stat(pagesTotal.toLocaleString('vi-VN'),'Tổng số trang')}${stat(members.length,'Thành viên')}${stat(totalValue.toLocaleString('vi-VN')+' đ','Tổng giá trị bìa')}</div>`
+  +`<h4>📊 Số lượng theo trạng thái</h4><p>• <b>Sẵn sàng</b> — ${byStatus.ready} cuốn</p><p>• <b>Đang được đọc</b> — ${byStatus.reading} cuốn</p><p>• <b>Đã cho mượn</b> — ${byStatus.lent} cuốn</p><p>• <b>Bị thất lạc</b> — ${byStatus.lost} cuốn</p>`
   +list('📚 Thể loại đọc nhiều nhất',topGenre,([g,c])=>`<p>• <b>${nfc(g)}</b> — ${c} cuốn</p>`)
+  +list('🏢 Nhà xuất bản có nhiều sách nhất',topPub,([p,c])=>`<p>• <b>${nfc(p)}</b> — ${c} cuốn</p>`)
   +list('✍️ Tác giả có nhiều sách nhất',topAuthor,([a,c])=>`<p>• <b>${nfc(a)}</b> — ${c} cuốn</p>`)
   +list('🏆 Xếp hạng đọc xong',rank,([r,c],i)=>`<p>${['🥇','🥈','🥉'][i]||'•'} <b>${nfc(r)}</b> — ${c} cuốn</p>`)
   +list('⭐ Sách được chấm sao cao nhất',topRated,b=>`<p>• <b>${nfc(b.title)}</b> — ${'★'.repeat(b.rating||0)}</p>`);
@@ -192,5 +234,68 @@ async function buyWish(id){await api('/api/wishlist/'+id+'/buy',{method:'POST'})
 async function delWish(id){await api('/api/wishlist/'+id,{method:'DELETE'});await loadAll();}
 async function exportJson(){const j=await api('/api/export');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(j,null,2)],{type:'application/json'}));a.download='thu-vien-sach-gia-dinh.json';a.click();}
 async function importJson(){const f=document.getElementById('importFile').files[0];if(!f)return alert('Chọn file JSON trước.');const j=JSON.parse(await f.text());await api('/api/import',{method:'POST',body:JSON.stringify({...j,mode:document.getElementById('importMode').value})});document.getElementById('ioMsg').textContent='Đã nhập xong ✓';await loadAll();}
+// Nhap sach tu file Excel (.xlsx) hoac CSV: hang dau la ten cot.
+// Ten cot nhan ca tieng Viet co dau/khong dau, vd: 'Ten sach', 'NXB', 'Gia bia', 'So trang'.
+const unsign=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase().trim();
+const COLMAP={'ten sach':'title','tieu de':'title','title':'title','ten':'title','tac gia':'author','author':'author','the loai':'genre','genre':'genre','nxb':'publisher','nha xuat ban':'publisher','publisher':'publisher','nam':'year','nam xuat ban':'year','year':'year','so trang':'pages','pages':'pages','gia bia':'price','gia':'price','price':'price','vi tri':'location','location':'location','isbn':'isbn','trang thai':'status','status':'status','nguoi doc':'reader','tien do':'progress'};
+const STATUS_VI={'san sang':'ready','dang doc':'reading','da cho muon':'lent','cho muon':'lent','that lac':'lost','mat':'lost','ready':'ready','reading':'reading','lent':'lent','lost':'lost'};
+function normalizeImportRow(obj){
+  const b={title:'',author:'',genre:'',publisher:'',location:'',isbn:'',reader:'',year:null,pages:null,price:null,progress:0,status:'ready'};
+  for(const k of Object.keys(obj)){
+    const f=COLMAP[unsign(k)];if(!f)continue;
+    const v=obj[k];if(v==null||String(v).trim()==='')continue;
+    if(f==='year'||f==='pages'||f==='progress'){const n=parseInt(String(v).replace(/[^0-9]/g,''),10);if(!isNaN(n))b[f]=f==='progress'?Math.max(0,Math.min(100,n)):n;}
+    else if(f==='price'){const n=parseInt(String(v).replace(/[^0-9]/g,''),10);if(!isNaN(n)&&n>0)b.price=n;}
+    else if(f==='status'){b.status=STATUS_VI[unsign(v)]||'ready';}
+    else b[f]=nfc(String(v).trim());
+  }
+  return b.title?b:null;
+}
+function parseCsv(text){
+  const rows=[];let row=[],cur='',inQ=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(inQ){if(c==='"'){if(text[i+1]==='"'){cur+='"';i++;}else inQ=false;}else cur+=c;}
+    else if(c==='"')inQ=true;
+    else if(c===','){row.push(cur);cur='';}
+    else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cur);cur='';if(row.some(x=>x.trim()!==''))rows.push(row);row=[];}
+    else cur+=c;
+  }
+  if(cur!==''||row.length){row.push(cur);if(row.some(x=>x.trim()!==''))rows.push(row);}
+  return rows;
+}
+function rowsToBooks(rows){
+  if(!rows.length)return[];
+  const header=rows[0].map(h=>unsign(h));
+  return rows.slice(1).map(r=>{const obj={};header.forEach((h,i)=>{obj[h]=r[i];});return normalizeImportRow(obj);}).filter(Boolean);
+}
+async function loadSheetJs(){if(window.XLSX)return true;return new Promise(res=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=()=>res(!!window.XLSX);s.onerror=()=>res(false);document.head.appendChild(s);});}
+let excelBooks=[];
+async function previewExcel(){
+  const f=document.getElementById('excelFile').files[0];if(!f)return alert('Chọn file Excel (.xlsx) hoặc CSV trước.');
+  const box=document.getElementById('excelPreview');box.innerHTML='<p class="muted">Đang đọc file…</p>';excelBooks=[];
+  try{
+    let rows=[];
+    if(/\.csv$/i.test(f.name)){rows=parseCsv((await f.text()).replace(/^\ufeff/,''));}
+    else{
+      if(!await loadSheetJs()){box.innerHTML='<p class="muted">Không tải được thư viện đọc Excel (cần mạng). Bạn lưu file thành CSV rồi nhập lại nhé.</p>';return;}
+      const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+      rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+    }
+    excelBooks=rowsToBooks(rows);
+    if(!excelBooks.length){box.innerHTML='<p class="muted">Không đọc được cuốn nào. Kiểm tra lại: hàng đầu phải là tên cột (Tên sách, Tác giả, NXB…), mỗi cuốn một hàng, cột Tên sách không được để trống.</p>';return;}
+    box.innerHTML=`<p><b>Đọc được ${excelBooks.length} cuốn.</b> 5 cuốn đầu:</p>`+excelBooks.slice(0,5).map(b=>`<p>📖 <b>${esc(b.title)}</b>${b.author?' — '+esc(b.author):''}${b.publisher?' · '+esc(b.publisher):''}${b.year?' · '+b.year:''}${b.price?' · '+Number(b.price).toLocaleString('vi-VN')+'đ':''}</p>`).join('')+`<div class="row" style="margin-top:8px"><button class="green" onclick="confirmExcelImport()">Xác nhận nhập ${excelBooks.length} cuốn vào kệ</button></div>`;
+  }catch(e){box.innerHTML='<p class="muted">Lỗi đọc file: '+esc(e.message)+'</p>';}
+}
+async function confirmExcelImport(){
+  if(!excelBooks.length)return;
+  await api('/api/import',{method:'POST',body:JSON.stringify({books:excelBooks,mode:'merge'})});
+  document.getElementById('excelPreview').innerHTML='<p class="muted">Đã nhập '+excelBooks.length+' cuốn vào kệ ✓ (mỗi cuốn được cấp mã BP riêng)</p>';
+  excelBooks=[];await loadAll();
+}
+function downloadTemplate(e){
+  e.preventDefault();
+  const csv='\ufeffTên sách,Tác giả,Thể loại,NXB,Năm,Số trang,Giá bìa,Vị trí,ISBN,Trạng thái\n"Tiếng chim hót trong bụi mận gai","Colleen McCullough","Tiểu thuyết","NXB Văn Học",1977,692,120000,"Tủ phòng khách",9786043978698,"Sẵn sàng"\n"Doraemon - Tập 1","Fujiko F Fujio","Truyện tranh","NXB Kim Đồng",2010,180,25000,"Kệ phòng ngủ bé",,"Đang đọc"\n';
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='mau-nhap-sach.csv';a.click();
+}
 (async()=>{if(!token)return;try{me=(await api('/api/auth/me')).user;enterApp();}catch{token='';localStorage.removeItem('lib_token');}})();
 </script></body></html>

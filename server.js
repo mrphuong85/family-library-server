@@ -176,20 +176,41 @@ app.get('/api/search', async (req, res) => {
   res.json({ results: out });
 });
 
+// ---------- Ma sach: BP-0001, BP-0002... tu tang theo tai khoan ----------
+// Moi cuon sach co mot ma duy nhat de phan biet, ke ca hai cuon cung ten.
+const nextBookCode = (userId) => {
+  let max = 0;
+  db.books.filter(b => b.userId === userId).forEach(b => { const m = /^(?:TV|BP)-(\d+)$/.exec(b.code || ''); if (m) max = Math.max(max, parseInt(m[1], 10)); });
+  return 'BP-' + String(max + 1).padStart(4, '0');
+};
+// Sach cu them tu truoc chua co ma thi tu cap ma theo thu tu them vao.
+// Ma cu dang TV-xxxx (neu co) thi doi sang BP-xxxx, giu nguyen so.
+const backfillCodes = (userId) => {
+  const mine = db.books.filter(b => b.userId === userId).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  let changed = false;
+  mine.forEach(b => {
+    const m = /^TV-(\d+)$/.exec(b.code || '');
+    if (m) { b.code = 'BP-' + m[1]; changed = true; }
+    else if (!b.code) { b.code = nextBookCode(userId); changed = true; }
+  });
+  if (changed) saveData();
+};
+
 // ---------- Books (theo tai khoan) ----------
-app.get('/api/books', auth, (req, res) => res.json(db.books.filter(b => b.userId === req.user.id)));
+app.get('/api/books', auth, (req, res) => { backfillCodes(req.user.id); res.json(db.books.filter(b => b.userId === req.user.id)); });
 app.post('/api/books', auth, (req, res) => {
   const b = req.body || {};
   if (!b.title) return res.status(400).json({ error: 'Nhap tieu de sach.' });
-  const book = { id: uid(), userId: req.user.id, title: cleanStr(b.title), author: cleanStr(b.author), genre: cleanStr(b.genre), year: b.year || null, pages: b.pages || null, isbn: cleanStr(b.isbn), cover: cleanStr(b.cover), location: cleanStr(b.location), status: ['ready','reading','lent','lost'].includes(b.status) ? b.status : 'ready', reader: cleanStr(b.reader), progress: Math.max(0, Math.min(100, Number(b.progress) || 0)), rating: Math.max(0, Math.min(5, Number(b.rating) || 0)), review: cleanStr(b.review), createdAt: new Date().toISOString() };
+  const book = { id: uid(), userId: req.user.id, code: cleanStr(b.code) || nextBookCode(req.user.id), title: cleanStr(b.title), author: cleanStr(b.author), genre: cleanStr(b.genre), year: b.year || null, pages: b.pages || null, isbn: cleanStr(b.isbn), cover: cleanStr(b.cover), location: cleanStr(b.location), publisher: cleanStr(b.publisher), price: Math.max(0, Number(b.price) || 0) || null, status: ['ready','reading','lent','lost'].includes(b.status) ? b.status : 'ready', reader: cleanStr(b.reader), progress: Math.max(0, Math.min(100, Number(b.progress) || 0)), rating: Math.max(0, Math.min(5, Number(b.rating) || 0)), review: cleanStr(b.review), createdAt: new Date().toISOString() };
   db.books.push(book); saveData(); res.status(201).json(book);
 });
 app.put('/api/books/:id', auth, (req, res) => {
   const book = db.books.find(b => b.id === req.params.id && b.userId === req.user.id);
   if (!book) return res.status(404).json({ error: 'Khong tim thay sach.' });
-  Object.assign(book, req.body, { id: book.id, userId: book.userId });
-  for (const k of ['title', 'author', 'genre', 'cover', 'location', 'review', 'reader', 'isbn']) if (typeof book[k] === 'string') book[k] = book[k].normalize('NFC');
+  Object.assign(book, req.body, { id: book.id, userId: book.userId, code: cleanStr(req.body.code) || book.code });
+  for (const k of ['title', 'author', 'genre', 'cover', 'location', 'review', 'reader', 'isbn', 'publisher']) if (typeof book[k] === 'string') book[k] = book[k].normalize('NFC');
   if (book.progress != null) book.progress = Math.max(0, Math.min(100, Number(book.progress) || 0));
+  if (book.price != null) book.price = Math.max(0, Number(book.price) || 0) || null;
   saveData(); res.json(book);
 });
 app.delete('/api/books/:id', auth, (req, res) => {
@@ -224,7 +245,7 @@ app.post('/api/wishlist/:id/buy', auth, (req, res) => {
   const i = db.wishlist.findIndex(w => w.id === req.params.id && w.userId === req.user.id);
   if (i < 0) return res.status(404).json({ error: 'Khong tim thay.' });
   const w = db.wishlist.splice(i, 1)[0];
-  const book = { id: uid(), userId: req.user.id, title: w.title, author: w.author, genre: '', year: null, pages: null, isbn: '', cover: '', location: '', status: 'ready', reader: '', progress: 0, rating: 0, review: '', createdAt: new Date().toISOString() };
+  const book = { id: uid(), userId: req.user.id, code: nextBookCode(req.user.id), title: w.title, author: w.author, genre: '', year: null, pages: null, isbn: '', cover: '', location: '', publisher: '', price: null, status: 'ready', reader: '', progress: 0, rating: 0, review: '', createdAt: new Date().toISOString() };
   db.books.push(book); saveData(); res.json(book);
 });
 app.delete('/api/wishlist/:id', auth, (req, res) => {
@@ -240,13 +261,16 @@ app.get('/api/export', auth, (req, res) => {
 app.post('/api/import', auth, (req, res) => {
   const { books = [], members = [], wishlist = [], mode = 'merge' } = req.body || {};
   const clean = (arr) => (Array.isArray(arr) ? arr : []).map(x => ({ ...nfcDeep(x), id: uid(), userId: req.user.id }));
+  // Sach nhap tu file: chuan hoa trang thai, gia, so trang, nam, tien do neu thieu/sai dinh dang.
+  const normBooks = (arr) => arr.map(b => ({ ...b, status: ['ready','reading','lent','lost'].includes(b.status) ? b.status : 'ready', price: Math.max(0, Number(b.price) || 0) || null, pages: Number(b.pages) || null, year: Number(b.year) || null, progress: Math.max(0, Math.min(100, Number(b.progress) || 0)) }));
   if (mode === 'replace') {
-    db.books = db.books.filter(b => b.userId !== req.user.id).concat(clean(books));
+    db.books = db.books.filter(b => b.userId !== req.user.id).concat(normBooks(clean(books)));
     db.members = db.members.filter(m => m.userId !== req.user.id).concat(clean(members));
     db.wishlist = db.wishlist.filter(w => w.userId !== req.user.id).concat(clean(wishlist));
   } else {
-    db.books.push(...clean(books)); db.members.push(...clean(members)); db.wishlist.push(...clean(wishlist));
+    db.books.push(...normBooks(clean(books))); db.members.push(...clean(members)); db.wishlist.push(...clean(wishlist));
   }
+  backfillCodes(req.user.id);
   saveData(); res.json({ ok: true, books: db.books.filter(b => b.userId === req.user.id).length });
 });
 
